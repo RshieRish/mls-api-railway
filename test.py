@@ -423,7 +423,7 @@ def list_listings(
         FROM listings
         {where_sql}
         ORDER BY 
-            CASE WHEN data->>'LIST_AGENT' = 'Cn222505' THEN 0 ELSE 1 END,
+            CASE WHEN data->>'LIST_AGENT_ID' = 'CN222505' THEN 0 ELSE 1 END,
             updated_at DESC
         LIMIT %s OFFSET %s
     """
@@ -587,7 +587,7 @@ def get_featured_listings():
         cur.execute(
             """SELECT listing_key, data, updated_at FROM listings 
                ORDER BY 
-                    CASE WHEN data->>'LIST_AGENT' = 'Cn222505' THEN 0 ELSE 1 END,
+                    CASE WHEN data->>'LIST_AGENT_ID' = 'CN222505' THEN 0 ELSE 1 END,
                     updated_at DESC 
                LIMIT 6"""
         )
