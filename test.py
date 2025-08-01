@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-idx_server.py – FREE IDX ETL + API for MLS PIN “Manual Download”
+idx_server.py – FREE IDX ETL + API for MLS PIN "Manual Download"
 
 • Fetches nightly pipe-delimited listing file + photos via FTP (if enabled)
 • Loads/merges data into Postgres (JSONB for future-proof schema)
 • Launches FastAPI w/ lightweight search endpoints
+• Updated: Increased listing limit to 25000 to return all available listings
 
 Author : Your Name Here
 License: MIT
