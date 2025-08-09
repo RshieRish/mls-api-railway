@@ -38,8 +38,11 @@ RUN playwright install chromium
 # Copy application code
 COPY . .
 
+# Make start script executable
+RUN chmod +x start.sh
+
 # Expose port
 EXPOSE 8000
 
 # Start command
-CMD ["sh", "-c", "uvicorn test:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["./start.sh"]
