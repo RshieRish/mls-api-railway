@@ -39,7 +39,10 @@ SAMPLE_LISTINGS = [
         "STATUS": "Active",
         "REMARKS": "Stunning Back Bay Victorian with modern amenities",
         "LATITUDE": "42.3505",
-        "LONGITUDE": "-71.0743"
+        "LONGITUDE": "-71.0743",
+        "LIST_AGENT_NAME": "Brandon Sweeney",
+        "LIST_AGENT_ID": "Cn222505",
+        "IS_BRANDON_LISTING": True
     },
     {
         "LIST_NO": "125COMM",
@@ -55,7 +58,10 @@ SAMPLE_LISTINGS = [
         "STATUS": "Active",
         "REMARKS": "Beautiful Cambridge condo with city views",
         "LATITUDE": "42.3736",
-        "LONGITUDE": "-71.1097"
+        "LONGITUDE": "-71.1097",
+        "LIST_AGENT_NAME": "Sarah Johnson",
+        "LIST_AGENT_ID": "SARAH002",
+        "IS_BRANDON_LISTING": False
     },
     {
         "LIST_NO": "45OAK",
@@ -71,7 +77,10 @@ SAMPLE_LISTINGS = [
         "STATUS": "Active",
         "REMARKS": "Charming family home in quiet neighborhood",
         "LATITUDE": "42.6701",
-        "LONGITUDE": "-71.3023"
+        "LONGITUDE": "-71.3023",
+        "LIST_AGENT_NAME": "Brandon Sweeney",
+        "LIST_AGENT_ID": "Cn222505",
+        "IS_BRANDON_LISTING": True
     },
     {
         "LIST_NO": "200MAIN",
@@ -87,7 +96,10 @@ SAMPLE_LISTINGS = [
         "STATUS": "Active",
         "REMARKS": "Historic colonial with modern updates",
         "LATITUDE": "42.4430",
-        "LONGITUDE": "-71.2289"
+        "LONGITUDE": "-71.2289",
+        "LIST_AGENT_NAME": "Mike Davis",
+        "LIST_AGENT_ID": "MIKE003",
+        "IS_BRANDON_LISTING": False
     },
     {
         "LIST_NO": "88HARBOR",
@@ -103,7 +115,10 @@ SAMPLE_LISTINGS = [
         "STATUS": "Active",
         "REMARKS": "Waterfront luxury home with panoramic ocean views",
         "LATITUDE": "42.5001",
-        "LONGITUDE": "-70.8578"
+        "LONGITUDE": "-70.8578",
+        "LIST_AGENT_NAME": "Jennifer Wilson",
+        "LIST_AGENT_ID": "JENNIFER004",
+        "IS_BRANDON_LISTING": False
     }
 ]
 
@@ -193,11 +208,18 @@ def get_listings(
 
 @app.get("/listings/featured")
 def get_featured_listings():
-    """Get featured listings (first 3 listings)"""
-    featured = SAMPLE_LISTINGS[:3]
+    """Get featured listings with Brandon Sweeney's listings prioritized first"""
+    # Separate Brandon's listings (using agent ID Cn222505) and other listings
+    brandon_listings = [listing for listing in SAMPLE_LISTINGS if listing.get("LIST_AGENT_ID") == "Cn222505"]
+    other_listings = [listing for listing in SAMPLE_LISTINGS if listing.get("LIST_AGENT_ID") != "Cn222505"]
+    
+    # Combine with Brandon's listings first, then others
+    featured = brandon_listings + other_listings
+    
+    # Return first 3 listings (Brandon's will always be first)
     return [{
         "data": listing
-    } for listing in featured]
+    } for listing in featured[:3]]
 
 @app.get("/listings/{listing_id}")
 def get_listing_by_id(listing_id: str):

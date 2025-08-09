@@ -1,0 +1,28 @@
+# Additional requirements for automated MLS PIN downloads
+# Add these to your existing requirements.txt
+
+# Web automation
+playwright==1.40.0
+
+# Job scheduling
+APScheduler==3.10.4
+
+# Async support (if not already included)
+aiofiles==23.2.1
+aiohttp==3.9.1
+
+# Enhanced logging and monitoring
+structlog==23.2.0
+
+# Environment and configuration
+python-dotenv>=1.0.0  # Should already be included
+
+# Database (should already be included)
+psycopg2-binary>=2.9.0
+
+# FastAPI and dependencies (should already be included)
+fastapi>=0.104.0
+uvicorn>=0.24.0
+
+# For file handling and utilities
+pathlib2==2.3.7
