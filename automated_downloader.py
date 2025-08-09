@@ -83,6 +83,11 @@ class MLSPinDownloader:
     async def login(self) -> bool:
         """Login to MLS PIN website"""
         try:
+            # Check if credentials are available
+            if not MLS_PIN_USERNAME or not MLS_PIN_PASSWORD:
+                log.error("MLS PIN credentials not configured. Please set MLS_PIN_USERNAME and MLS_PIN_PASSWORD environment variables.")
+                return False
+            
             log.info("Navigating to MLS PIN login page")
             await self.page.goto("https://pinergy.mlspin.com/")
             
