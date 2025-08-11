@@ -394,7 +394,9 @@ def list_listings(
     max_price: Optional[int] = Query(None, ge=0),
     bedrooms: Optional[int] = Query(None, ge=0),
     bathrooms: Optional[int] = Query(None, ge=0),
-    limit: int = Query(25000, gt=0, le=25000),
+    status: Optional[str] = Query(None, description="Filter by listing status (ACT, SOLD, CTG, etc.)"),
+    exclude_sold: bool = Query(False, description="Exclude sold listings from results"),
+    limit: int = Query(25000, gt=0, le=50000),
     offset: int = Query(0, ge=0),
 ):
     where, params = [], []
@@ -416,6 +418,11 @@ def list_listings(
     if bathrooms is not None:
         where.append("COALESCE((data->>'BathroomsTotalInteger')::numeric, (data->>'NO_FULL_BATHS')::numeric, 0) >= %s")
         params.append(bathrooms)
+    if status:
+        where.append("listingstatus = %s")
+        params.append(status)
+    if exclude_sold:
+        where.append("listingstatus != 'SOLD'")
 
     where_sql = "WHERE " + " AND ".join(where) if where else ""
     sql = f"""
