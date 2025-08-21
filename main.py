@@ -364,16 +364,11 @@ def get_contacts(
             
             # Build query with tags
             base_query = """
-                SELECT DISTINCT c.id, c.first_name, c.last_name, c.full_name, c.primary_personal_email, 
+                SELECT c.id, c.first_name, c.last_name, c.full_name, c.primary_personal_email, 
                        c.primary_personal_phone, c.mailing_city, c.mailing_state,
                        c.health_score, c.last_contacted_at, c.created_at, c.updated_at,
-                       COALESCE(
-                           STRING_AGG(t.name, ', ' ORDER BY t.name), 
-                           ''
-                       ) as tags
+                       COALESCE(c.custom_tags, '') as tags, c.owner_user_id, c.assignee_user_id
                 FROM crm_contacts c
-                LEFT JOIN crm_contact_tags ct ON c.id = ct.contact_id
-                LEFT JOIN crm_tags t ON ct.tag_id = t.id
             """
             
             if where_conditions:
@@ -381,8 +376,7 @@ def get_contacts(
             else:
                 query = base_query
             
-            # Add GROUP BY for aggregation
-            query += " GROUP BY c.id, c.first_name, c.last_name, c.full_name, c.primary_personal_email, c.primary_personal_phone, c.mailing_city, c.mailing_state, c.health_score, c.last_contacted_at, c.created_at, c.updated_at"
+            # No GROUP BY needed since we're not using aggregation anymore
             
             # Add ordering and pagination
             query += f" ORDER BY c.{sort} {order} LIMIT %s OFFSET %s"
@@ -441,7 +435,14 @@ def get_contact(contact_id: int):
     try:
         with get_conn() as conn, conn.cursor() as cur:
             cur.execute("""
-                SELECT * FROM crm_contacts WHERE id = %s
+                SELECT id, first_name, last_name, full_name, primary_personal_email, 
+                       primary_personal_phone, mailing_city, mailing_state,
+                       health_score, last_contacted_at, created_at, updated_at,
+                       COALESCE(custom_tags, '') as tags, owner_user_id, assignee_user_id,
+                       notes, mailing_address_line_1, mailing_address_line_2, mailing_zip_code,
+                       lead_source, birthday, anniversary, about, company_name, title, stage,
+                       source, other_source
+                FROM crm_contacts WHERE id = %s
             """, (contact_id,))
             
             contact = cur.fetchone()
