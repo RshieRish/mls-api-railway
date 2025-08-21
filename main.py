@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import uvicorn
 import psycopg2
@@ -35,6 +36,32 @@ DB_DSN = os.getenv("DATABASE_URL")
 def get_conn():
     """Get database connection"""
     return psycopg2.connect(dsn=DB_DSN, cursor_factory=RealDictCursor)
+
+def format_phone_number(phone):
+    """Format phone number to a readable format"""
+    if not phone:
+        return None
+    
+    # Convert to string and remove any non-digit characters
+    phone_str = str(phone).replace('.', '').replace('-', '').replace('(', '').replace(')', '').replace(' ', '')
+    
+    # If it's a 10-digit number, format as (XXX) XXX-XXXX
+    if len(phone_str) == 10 and phone_str.isdigit():
+        return f"({phone_str[:3]}) {phone_str[3:6]}-{phone_str[6:]}"
+    # If it's an 11-digit number starting with 1, format as +1 (XXX) XXX-XXXX
+    elif len(phone_str) == 11 and phone_str.startswith('1') and phone_str.isdigit():
+        return f"+1 ({phone_str[1:4]}) {phone_str[4:7]}-{phone_str[7:]}"
+    # Handle numbers like 197860467120 - assume it's malformed and take middle 10 digits
+    elif len(phone_str) == 12 and phone_str[:2] == '19' and phone_str.isdigit():
+        digits = phone_str[1:11]
+        return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+    # For any other long number, take the last 10 digits
+    elif len(phone_str) >= 10 and phone_str.isdigit():
+        digits = phone_str[-10:]
+        return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+    # Otherwise, return as-is
+    else:
+        return phone_str if phone_str else None
 
 def format_listing_data(raw_data):
     """Format raw database listing data for API response"""
@@ -88,6 +115,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount static files from the parent public directory
+import pathlib
+static_dir = pathlib.Path(__file__).parent.parent / "public"
+if static_dir.exists():
+    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
 class Listing(BaseModel):
     data: Dict[str, Any]
@@ -157,6 +190,7 @@ def root():
             "/listings/featured",
             "/search",
             "/health",
+            "/debug",
             "/api/crm/contacts",
             "/api/crm/contacts/{contact_id}",
             "/api/crm/neighborhoods",
@@ -169,6 +203,79 @@ def root():
             "/api/crm/notes/{note_id}"
         ]
     }
+
+@app.get("/test")
+def test():
+    """Simple test endpoint to verify deployment"""
+    return {
+        "status": "ok",
+        "timestamp": datetime.now().isoformat(),
+        "database_url_exists": bool(os.getenv("DATABASE_URL"))
+    }
+
+@app.get("/debug")
+def debug():
+    """Debug endpoint to test database connection and table existence"""
+    try:
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            return {"error": "DATABASE_URL not found"}
+        
+        # Test basic connection first
+        conn = psycopg2.connect(dsn=db_url, cursor_factory=RealDictCursor)
+        cur = conn.cursor()
+        
+        # Test simple query
+        cur.execute("SELECT 1 as test")
+        test_result = cur.fetchone()
+        
+        # Check if crm_contacts table exists
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'crm_contacts'
+            )
+        """)
+        table_check = cur.fetchone()
+        table_exists = bool(table_check and table_check.get('exists', False))
+        
+        count = "table_not_found"
+        if table_exists:
+            try:
+                cur.execute("SELECT COUNT(*) FROM crm_contacts")
+                count_result = cur.fetchone()
+                count = count_result.get('count', 0) if count_result else 0
+            except Exception as count_error:
+                count = f"count_error: {str(count_error)}"
+        
+        # Check what tables do exist
+        cur.execute("""
+            SELECT table_name FROM information_schema.tables 
+            WHERE table_schema = 'public'
+            ORDER BY table_name
+        """)
+        existing_tables = [row.get('table_name', '') for row in cur.fetchall()]
+        
+        conn.close()
+        
+        return {
+            "database_url_exists": bool(db_url),
+            "database_url_prefix": db_url[:20] if db_url else None,
+            "connection_test": bool(test_result),
+            "crm_contacts_table_exists": table_exists,
+            "crm_contacts_count": count,
+            "existing_tables": existing_tables,
+            "connection_success": True
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "database_url_exists": bool(os.getenv("DATABASE_URL")),
+            "connection_success": False,
+            "traceback": traceback.format_exc()
+        }
 
 # CRM API Endpoints
 
@@ -184,6 +291,19 @@ def get_contacts(
 ):
     """Get contacts with search, filtering, and pagination"""
     try:
+        # Validate sort parameter
+        valid_sort_columns = [
+            "id", "first_name", "last_name", "full_name", "primary_personal_email",
+            "primary_personal_phone", "mailing_city", "mailing_state", 
+            "health_score", "last_contacted_at", "created_at", "updated_at"
+        ]
+        if sort not in valid_sort_columns:
+            sort = "updated_at"  # Default fallback
+            
+        # Validate order parameter
+        if order.upper() not in ["ASC", "DESC"]:
+            order = "DESC"  # Default fallback
+            
         with get_conn() as conn, conn.cursor() as cur:
             # Build search conditions
             where_conditions = []
@@ -196,12 +316,18 @@ def get_contacts(
                 search_term = f"%{search}%"
                 params.extend([search_term, search_term, search_term])
             
-            # Build query
+            # Build query with tags
             base_query = """
-                SELECT id, first_name, last_name, full_name, primary_personal_email, 
-                       primary_personal_phone, mailing_city, mailing_state,
-                       health_score, last_contacted_at, created_at, updated_at
-                FROM crm_contacts
+                SELECT DISTINCT c.id, c.first_name, c.last_name, c.full_name, c.primary_personal_email, 
+                       c.primary_personal_phone, c.mailing_city, c.mailing_state,
+                       c.health_score, c.last_contacted_at, c.created_at, c.updated_at,
+                       COALESCE(
+                           STRING_AGG(t.name, ', ' ORDER BY t.name), 
+                           ''
+                       ) as tags
+                FROM crm_contacts c
+                LEFT JOIN crm_contact_tags ct ON c.id = ct.contact_id
+                LEFT JOIN crm_tags t ON ct.tag_id = t.id
             """
             
             if where_conditions:
@@ -209,33 +335,59 @@ def get_contacts(
             else:
                 query = base_query
             
+            # Add GROUP BY for aggregation
+            query += " GROUP BY c.id, c.first_name, c.last_name, c.full_name, c.primary_personal_email, c.primary_personal_phone, c.mailing_city, c.mailing_state, c.health_score, c.last_contacted_at, c.created_at, c.updated_at"
+            
             # Add ordering and pagination
-            query += f" ORDER BY {sort} {order} LIMIT %s OFFSET %s"
+            query += f" ORDER BY c.{sort} {order} LIMIT %s OFFSET %s"
             params.extend([limit, offset])
             
             cur.execute(query, params)
             contacts = cur.fetchall()
             
+            # Format contacts data
+            formatted_contacts = []
+            for contact in contacts:
+                contact_dict = dict(contact)
+                # Format phone number
+                if contact_dict.get('primary_personal_phone'):
+                    contact_dict['primary_personal_phone'] = format_phone_number(contact_dict['primary_personal_phone'])
+                formatted_contacts.append(contact_dict)
+            
             # Get total count
-            count_query = "SELECT COUNT(*) FROM crm_contacts"
+            count_query = "SELECT COUNT(DISTINCT c.id) FROM crm_contacts c"
             if where_conditions:
                 count_query += f" WHERE {' AND '.join(where_conditions)}"
                 cur.execute(count_query, params[:-2])  # Exclude limit/offset
             else:
                 cur.execute(count_query)
             
-            total = cur.fetchone()[0]
+            count_result = cur.fetchone()
+            if count_result:
+                # Handle RealDictCursor result - get the count value
+                if isinstance(count_result, dict):
+                    total = list(count_result.values())[0]  # Get first value from dict
+                else:
+                    total = count_result[0]  # Regular tuple result
+            else:
+                total = 0
             
             return {
-                "contacts": [dict(contact) for contact in contacts],
+                "contacts": formatted_contacts,
                 "total": total,
                 "limit": limit,
                 "offset": offset
             }
             
     except Exception as e:
-        log.error(f"Error fetching contacts: {e}")
-        raise HTTPException(status_code=500, detail="Database error")
+        import traceback
+        error_details = {
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }
+        log.error(f"Error fetching contacts: {str(e)} - Type: {type(e).__name__} - Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @app.get("/api/crm/contacts/{contact_id}")
 def get_contact(contact_id: int):
@@ -608,13 +760,13 @@ def get_contact_tasks(contact_id: int, status: str = None):
                 cur.execute("""
                     SELECT * FROM crm_tasks 
                     WHERE contact_id = %s AND status = %s
-                    ORDER BY due_date ASC, created_at DESC
+                    ORDER BY due_at ASC, created_at DESC
                 """, (contact_id, status))
             else:
                 cur.execute("""
                     SELECT * FROM crm_tasks 
                     WHERE contact_id = %s
-                    ORDER BY due_date ASC, created_at DESC
+                    ORDER BY due_at ASC, created_at DESC
                 """, (contact_id,))
             
             tasks = cur.fetchall()
@@ -631,10 +783,10 @@ def create_task(contact_id: int, task: Task):
         with get_conn() as conn, conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO crm_tasks 
-                (contact_id, title, description, due_date, priority, status, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                (contact_id, title, due_at, notes, status, created_at)
+                VALUES (%s, %s, %s, %s, %s, NOW())
                 RETURNING *
-            """, (contact_id, task.title, task.description, task.due_date, task.priority, task.status))
+            """, (contact_id, task.title, task.due_date, task.description, task.status))
             
             new_task = cur.fetchone()
             conn.commit()
@@ -794,12 +946,13 @@ def health_check():
     """Health check endpoint"""
     try:
         with get_conn() as conn, conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM listings")
-            count = cur.fetchone()[0]
+            # Check if CRM contacts table exists and get count
+            cur.execute("SELECT COUNT(*) FROM crm_contacts")
+            contacts_count = cur.fetchone()[0]
             return {
                 "status": "OK",
                 "message": "MLS API is running on Railway",
-                "listings_count": count,
+                "contacts_count": contacts_count,
                 "database_connected": True,
                 "timestamp": datetime.now().isoformat()
             }
@@ -808,7 +961,7 @@ def health_check():
         return {
             "status": "OK",
             "message": "MLS API is running on Railway",
-            "listings_count": 0,
+            "contacts_count": 0,
             "database_connected": False,
             "error": str(e),
             "timestamp": datetime.now().isoformat()
