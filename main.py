@@ -903,14 +903,31 @@ def get_contact_notes(contact_id: int):
     """Get notes for a contact"""
     try:
         with get_conn() as conn, conn.cursor() as cur:
+            # Get notes from the crm_contacts.notes field
             cur.execute("""
-                SELECT * FROM crm_notes 
-                WHERE contact_id = %s 
-                ORDER BY created_at DESC
+                SELECT id, notes, created_at, updated_at 
+                FROM crm_contacts 
+                WHERE id = %s AND notes IS NOT NULL AND notes != ''
             """, (contact_id,))
             
-            notes = cur.fetchall()
-            return [dict(note) for note in notes]
+            contact = cur.fetchone()
+            
+            if contact and contact['notes']:
+                # Return notes in the format expected by the frontend
+                return [{
+                    'id': f"contact_{contact['id']}_notes",
+                    'contact_id': contact['id'],
+                    'content': contact['notes'],
+                    'body': contact['notes'],
+                    'title': 'Contact Notes',
+                    'type': 'NOTE',
+                    'author': 'System',
+                    'actor': 'System',
+                    'created_at': contact['created_at'],
+                    'occurred_at': contact['created_at']
+                }]
+            else:
+                return []
             
     except Exception as e:
         log.error(f"Error fetching notes for contact {contact_id}: {e}")
@@ -925,15 +942,49 @@ def create_note(contact_id: int, note_data: dict):
             raise HTTPException(status_code=400, detail="Content is required")
         
         with get_conn() as conn, conn.cursor() as cur:
+            # Get existing notes
             cur.execute("""
-                INSERT INTO crm_notes (contact_id, content, created_at)
-                VALUES (%s, %s, NOW())
-                RETURNING *
-            """, (contact_id, content))
+                SELECT notes FROM crm_contacts WHERE id = %s
+            """, (contact_id,))
             
-            new_note = cur.fetchone()
+            contact = cur.fetchone()
+            if not contact:
+                raise HTTPException(status_code=404, detail="Contact not found")
+            
+            # Append new note to existing notes
+            existing_notes = contact['notes'] or ''
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            new_note_text = f"[{timestamp}] {content}"
+            
+            if existing_notes:
+                updated_notes = f"{existing_notes}\n\n{new_note_text}"
+            else:
+                updated_notes = new_note_text
+            
+            # Update the contact's notes field
+            cur.execute("""
+                UPDATE crm_contacts 
+                SET notes = %s, updated_at = NOW()
+                WHERE id = %s
+                RETURNING id, notes, updated_at
+            """, (updated_notes, contact_id))
+            
+            updated_contact = cur.fetchone()
             conn.commit()
-            return dict(new_note)
+            
+            # Return the new note in the expected format
+            return {
+                'id': f"contact_{contact_id}_notes_{int(datetime.now().timestamp())}",
+                'contact_id': contact_id,
+                'content': content,
+                'body': content,
+                'title': 'Contact Notes',
+                'type': 'NOTE',
+                'author': 'System',
+                'actor': 'System',
+                'created_at': updated_contact['updated_at'],
+                'occurred_at': updated_contact['updated_at']
+            }
             
     except HTTPException:
         raise
