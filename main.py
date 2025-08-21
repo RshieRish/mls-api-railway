@@ -440,7 +440,7 @@ def get_contact(contact_id: int):
                        health_score, last_contacted_at, created_at, updated_at,
                        COALESCE(custom_tags, '') as tags, owner_user_id, assignee_user_id,
                        notes, mailing_address_line_1, mailing_address_line_2, mailing_zip_code,
-                       lead_source, birthday, anniversary, about, company_name, title, stage,
+                       lead_source, birthday, spouse_anniversary, description, company_name, title, stage,
                        source, other_source
                 FROM crm_contacts WHERE id = %s
             """, (contact_id,))
