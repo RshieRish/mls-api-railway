@@ -13,6 +13,7 @@ from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 import uvicorn
 import psycopg2
@@ -120,7 +121,7 @@ app.add_middleware(
 import pathlib
 static_dir = pathlib.Path(__file__).parent.parent / "public"
 if static_dir.exists():
-    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 class Listing(BaseModel):
     data: Dict[str, Any]
@@ -198,11 +199,56 @@ def root():
             "/api/crm/contacts/{contact_id}/neighborhoods",
             "/api/crm/contacts/{contact_id}/timeline",
             "/api/crm/contacts/{contact_id}/tasks",
-            "/api/crm/contacts/{contact_id}/notes",
-            "/api/crm/tasks/{task_id}",
-            "/api/crm/notes/{note_id}"
         ]
     }
+
+@app.get("/crm.html")
+def serve_crm_html():
+    static_dir = pathlib.Path(__file__).parent.parent / "public"
+    crm_file = static_dir / "crm.html"
+    if crm_file.exists():
+        return FileResponse(str(crm_file), media_type="text/html")
+    raise HTTPException(status_code=404, detail="CRM file not found")
+
+@app.get("/crm-script.js")
+def serve_crm_script():
+    static_dir = pathlib.Path(__file__).parent.parent / "public"
+    script_file = static_dir / "crm-script.js"
+    if script_file.exists():
+        return FileResponse(str(script_file), media_type="application/javascript")
+    raise HTTPException(status_code=404, detail="CRM script not found")
+
+@app.get("/crm-styles.css")
+def serve_crm_styles():
+    static_dir = pathlib.Path(__file__).parent.parent / "public"
+    css_file = static_dir / "crm-styles.css"
+    if css_file.exists():
+        return FileResponse(str(css_file), media_type="text/css")
+    raise HTTPException(status_code=404, detail="CRM styles not found")
+
+@app.get("/styles.css")
+def serve_styles():
+    static_dir = pathlib.Path(__file__).parent.parent / "public"
+    css_file = static_dir / "styles.css"
+    if css_file.exists():
+        return FileResponse(str(css_file), media_type="text/css")
+    raise HTTPException(status_code=404, detail="Styles not found")
+
+@app.get("/admin-styles.css")
+def serve_admin_styles():
+    static_dir = pathlib.Path(__file__).parent.parent / "public"
+    css_file = static_dir / "admin-styles.css"
+    if css_file.exists():
+        return FileResponse(str(css_file), media_type="text/css")
+    raise HTTPException(status_code=404, detail="Admin styles not found")
+
+@app.get("/safari-fix.css")
+def serve_safari_fix():
+    static_dir = pathlib.Path(__file__).parent.parent / "public"
+    css_file = static_dir / "safari-fix.css"
+    if css_file.exists():
+        return FileResponse(str(css_file), media_type="text/css")
+    raise HTTPException(status_code=404, detail="Safari fix not found")
 
 @app.get("/test")
 def test():
